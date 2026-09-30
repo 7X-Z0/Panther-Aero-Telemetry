@@ -15,3 +15,9 @@ git add .
 git commit -m "Add sensor code"  
 git push -u origin [branch name]
 ```
+
+## Libraries  
+https://github.com/adafruit/Adafruit_Sensor  
+https://github.com/adafruit/Adafruit_BusIO  
+https://github.com/adafruit/Adafruit_BNO08x  
+https://github.com/adafruit/Adafruit_BMP3XX  
