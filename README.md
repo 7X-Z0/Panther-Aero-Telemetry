@@ -1,4 +1,17 @@
 # Panther-Aero-Telemetry
 Redoing telemetry systems for test/competition flights
 
-**Reminder for developers: do "git pull origin main" before working unless you're working on a branch**
+**Reminder for developers: pull the most recent commit from main before starting on your branch**
+
+```bash
+git checkout main  
+git pull  
+
+git checkout -b [branch name]  
+
+# make your changes  
+
+git add .  
+git commit -m "Add sensor code"  
+git push -u origin [branch name]
+```
