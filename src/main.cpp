@@ -10,7 +10,7 @@ const char* LOG_FILE_NAME = "/flight-log.txt";
 const int SAMPLE_RATE = 100;  // How often data is logged (in milliseconds)
 
 // Global sensor values (read in loop, served on request)
-float altitude    = 0, temperature = 0, pressure = 0;
+float altitude = 0, temperature = 0;
 float accelX = 0, accelY = 0, accelZ = 0;
 float pitch  = 0, roll   = 0, yaw    = 0;
 
@@ -27,7 +27,6 @@ void setup() {
 
   // Barometer configuration
   barometer.setTemperatureOversampling(BMP3_OVERSAMPLING_2X);
-  barometer.setPressureOversampling(BMP3_OVERSAMPLING_16X);
   barometer.setIIRFilterCoeff(BMP3_IIR_FILTER_COEFF_7);
   barometer.setOutputDataRate(BMP3_ODR_50_HZ);
 
@@ -37,7 +36,7 @@ void setup() {
 
   // Log file creation
   File logFile = SD.open(LOG_FILE_NAME, "w");
-  logFile.println("Time | Altitude | Temperature | Pressure | X-Acceleration | Y-Acceleration | Z-Acceleration | Pitch | Roll | Yaw");
+  logFile.println("Time | Altitude | Temperature | X-Acceleration | Y-Acceleration | Z-Acceleration | Pitch | Roll | Yaw");
   logFile.close();
 }
 
@@ -45,7 +44,6 @@ void loop() {
   // Get the barometer's data readings
   altitude = barometer.readAltitude(1013.25); // Standard sea level pressure in hPa
   temperature = barometer.temperature;
-  pressure = barometer.pressure;
 
   // Local variables for IMU data
   //float accelX = 0, accelY = 0, accelZ = 0;
@@ -77,7 +75,6 @@ void loop() {
     millis(),
     altitude,
     temperature,
-    pressure,
     accelX,
     accelY,
     accelZ,
