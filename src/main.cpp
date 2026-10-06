@@ -19,6 +19,11 @@ Adafruit_BMP3XX barometer;
 Adafruit_BNO08x IMU;
 sh2_SensorValue_t sensorValue;
 
+//Calculate gforce
+void calculategforce(){
+  
+}
+
 //Calibrate Roll Pitch Yaw
 void calibrate() {
   //Wait until BNO08x reports good calibration status
