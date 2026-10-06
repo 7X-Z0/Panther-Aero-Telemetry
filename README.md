@@ -16,14 +16,14 @@ git commit -m "Add sensor code"
 git push -u origin [branch name]
 ```
 
-- [ ] Airspeed
-- [ ] Ground Speed
-- [ ] G-forces
-- [ ] Pack voltage/power draw
-- [ ] Temperature (motor/ESC)
-- [x] Temperature (ambient)
-- [x] Altitude
-- [ ] Cimb Speed
+- [ ] Airspeed (Pitot tube) (pending)  
+- [ ] Ground Speed (IMU)  
+- [ ] G-forces (Lorenzo)  
+- [ ] Pack voltage/power draw (pending)   
+- [ ] Temperature (motor/ESC) (pending)  
+- [x] Temperature (ambient)  
+- [x] Altitude  
+- [ ] Climb Speed (IMU)   
 
 
 ## Libraries  
