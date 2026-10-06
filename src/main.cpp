@@ -5,6 +5,7 @@
 #include <Adafruit_Sensor.h>  // Main sensor library
 #include <Adafruit_BMP3XX.h>  // Driver for Barometer
 #include <Adafruit_BNO08x.h> //Driver for IMU
+#include <math.h>
 
 const char* LOG_FILE_NAME = "/flight-log.txt";
 const int SAMPLE_RATE = 100;  // How often data is logged (in milliseconds)
@@ -14,10 +15,23 @@ float altitude = 0, temperature = 0;
 float accelX = 0, accelY = 0, accelZ = 0;
 float pitch  = 0, roll   = 0, yaw    = 0;
 float altitudeBaseline = 0.0; 
+float totalGroundSpeed = 0.0, xGroundSpeed = 0.0, yGroundSpeed = 0.0, zGroundSpeed = 0.0;
 
 Adafruit_BMP3XX barometer;
 Adafruit_BNO08x IMU;
 sh2_SensorValue_t sensorValue;
+
+//ground speed
+float calculateGroundSpeed(float accelX, float accelY, float accelZ) {
+  float initialXGroundSpeed = xGroundSpeed;
+  float initialYGroundSpeed = yGroundSpeed;
+  float initialZGroundSpeed = zGroundSpeed;
+  float xGroundSpeed = initialXGroundSpeed + accelX * 0.1;
+  float yGroundSpeed = initialYGroundSpeed + accelY * 0.1;
+  float zGroundSpeed = initialZGroundSpeed + accelZ * 0.1;
+  float totalGroundSpeed = sqrt(pow(xGroundSpeed, 2) + pow(yGroundSpeed, 2) + pow(zGroundSpeed, 2));
+  return totalGroundSpeed;
+}
 
 //Calculate gforce
 void calculategforce(){
@@ -133,6 +147,8 @@ void loop() {
       accelZ = sensorValue.un.linearAcceleration.z;
     }
 
+
+  totalGroundSpeed = calculateGroundSpeed(accelX, accelY, accelZ);
   // Write the data into the flight log
   File logFile = SD.open(LOG_FILE_NAME, "a");
   
