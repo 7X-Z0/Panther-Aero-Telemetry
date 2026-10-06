@@ -24,7 +24,7 @@ Adafruit_BNO08x IMU;
 sh2_SensorValue_t sensorValue;
 
 //Calculate gforce
-double calculategforce(float accelX, float accelY, float accelZ){
+float calculategforce(float accelX, float accelY, float accelZ){
   float magnitudeAccel = sqrt(pow(accelX, 2) + pow(accelY, 2) + pow(accelZ, 2));
   float Gforce = magnitudeAccel / gravityConstant;
   return Gforce;
