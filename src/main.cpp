@@ -114,9 +114,11 @@ void setup() {
   IMU.enableReport(SH2_GYROSCOPE_CALIBRATED);
 
   // Log file creation
+  /*
   File logFile = SD.open(LOG_FILE_NAME, "w");
   logFile.println("Time | Altitude | Temperature | X-Acceleration | Y-Acceleration | Z-Acceleration | Pitch | Roll | Yaw");
   logFile.close();
+  */
 }
 
 void loop() {
@@ -140,7 +142,14 @@ void loop() {
     }
 
   gForce = calculategforce(accelX, accelY, accelZ);
+  
+  Serial.println("UMMM");
+  Serial.println(altitude);
+  Serial.println(temperature);
+  Serial.println(accelX);
+  Serial.println(gForce);
 
+  /*
   // Write the data into the flight log
   File logFile = SD.open(LOG_FILE_NAME, "a");
   
@@ -158,7 +167,9 @@ void loop() {
   );
 
   logFile.close();
+  */
 
   // Wait before running the loop again
   delay(SAMPLE_RATE);
+}
 }
