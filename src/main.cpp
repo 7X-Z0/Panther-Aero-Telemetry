@@ -100,9 +100,12 @@ void quaternionToEuler(float qr, float qi, float qj, float qk,
 void setup() {
   Serial.begin(115200); // Initialize ESP32
   Wire.begin();         // Initialize I2C
-  SD.begin();
+  // SD.begin();
   barometer.begin_I2C();
   IMU.begin_I2C();
+  Serial.println("Before");
+  calibrate();
+  Serial.println("After");
 
   // Barometer configuration
   barometer.setTemperatureOversampling(BMP3_OVERSAMPLING_2X);
