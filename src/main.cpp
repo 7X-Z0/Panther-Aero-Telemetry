@@ -18,6 +18,8 @@ float altitudeBaseline = 0.0;
 float gravityConstant = 9.81;
 float gForce = 0;
 
+//Barometer address: 0x76
+//IMU address: 0x4A
 
 Adafruit_BMP3XX barometer;
 Adafruit_BNO08x IMU;
@@ -34,11 +36,19 @@ float calculategforce(float accelX, float accelY, float accelZ){
 void calibrate() {
   //Wait until BNO08x reports good calibration status
   sh2_SensorValue_t val;
-  while (true) {
+  const uint32_t startMs = millis();
+  const uint32_t timeoutMs = 15000;  // 15s guard to avoid hanging forever
+
+  while (millis() - startMs < timeoutMs) {
     if (IMU.getSensorEvent(&val)) {
       if (val.status >= 2) break;  // 0=unreliable, 1=low, 2=medium, 3=high
     }
     delay(10);
+  }
+
+  if (millis() - startMs >= timeoutMs) {
+    Serial.println(F("[CAL] WARNING: IMU calibration timeout; continuing without final calibration."));
+    return;
   }
 
   Serial.println(F("[CAL] IMU ready, sampling altitude baseline..."));
@@ -99,16 +109,27 @@ void quaternionToEuler(float qr, float qi, float qj, float qk,
 
 void setup() {
   Serial.begin(115200); // Initialize ESP32
-  Wire.begin();         // Initialize I2C
-  // SD.begin();
-  barometer.begin_I2C();
-  IMU.begin_I2C();
+  Wire.begin(21, 22);  // SDA, SCL on ESP32 DevKit V1
+
+  if (!barometer.begin_I2C(0x76, &Wire)) {
+    Serial.println(F("[ERR] BMP388 not found on I2C bus."));
+  } else {
+    Serial.println(F("[OK] BMP388 initialized."));
+  }
+
+  if (!IMU.begin_I2C(0x4A, &Wire)) {
+    Serial.println(F("[ERR] BNO08x not found on I2C bus."));
+  } else {
+    Serial.println(F("[OK] BNO08x initialized."));
+  }
+
   Serial.println("Before");
   calibrate();
   Serial.println("After");
 
   // Barometer configuration
-  barometer.setTemperatureOversampling(BMP3_OVERSAMPLING_2X);
+  barometer.setTemperatureOversampling(BMP3_OVERSAMPLING_8X);
+  barometer.setPressureOversampling(BMP3_OVERSAMPLING_4X);
   barometer.setIIRFilterCoeff(BMP3_IIR_FILTER_COEFF_7);
   barometer.setOutputDataRate(BMP3_ODR_50_HZ);
 
@@ -126,32 +147,34 @@ void setup() {
 
 void loop() {
   // Get the barometer's data readings
-  altitude = barometer.readAltitude(1013.25); // Standard sea level pressure in hPa
-  temperature = barometer.temperature;
+  if (!barometer.performReading()) {
+    Serial.println(F("[ERR] Failed to perform reading from BMP388."));
+  } else {
+    altitude = barometer.readAltitude(1013.25);
+    temperature = barometer.readTemperature();
+    Serial.println("FUCK YOU");
+    Serial.print("Altitude: ");
+    Serial.print(altitude);
+    Serial.println(" m");
+    Serial.print("Temperature: ");
+    Serial.print(temperature);
+    Serial.println(" C");
+  }
 
-  while (IMU.getSensorEvent(&sensorValue)){
-    if (sensorValue.sensorId == SH2_ROTATION_VECTOR){
-      quaternionToEuler(
-        sensorValue.un.rotationVector.real,
-        sensorValue.un.rotationVector.i,
-        sensorValue.un.rotationVector.j,
-        sensorValue.un.rotationVector.k,
-        roll, pitch, yaw
-      );
-    } else if (sensorValue.sensorId == SH2_LINEAR_ACCELERATION) {
-      accelX = sensorValue.un.linearAcceleration.x;
-      accelY = sensorValue.un.linearAcceleration.y;
-      accelZ = sensorValue.un.linearAcceleration.z;
-    }
-
-  gForce = calculategforce(accelX, accelY, accelZ);
-  
-  Serial.println("UMMM");
-  Serial.println(altitude);
-  Serial.println(temperature);
-  Serial.println(accelX);
-  Serial.println(gForce);
-
+//  while (IMU.getSensorEvent(&sensorValue)){
+//    if (sensorValue.sensorId == SH2_ROTATION_VECTOR){
+//      quaternionToEuler(
+//        sensorValue.un.rotationVector.real,
+//        sensorValue.un.rotationVector.i,
+//        sensorValue.un.rotationVector.j,
+//        sensorValue.un.rotationVector.k,
+//        roll, pitch, yaw
+//      );
+//    } else if (sensorValue.sensorId == SH2_LINEAR_ACCELERATION) {
+//      accelX = sensorValue.un.linearAcceleration.x;
+//      accelY = sensorValue.un.linearAcceleration.y;
+//      accelZ = sensorValue.un.linearAcceleration.z;
+//    }
   /*
   // Write the data into the flight log
   File logFile = SD.open(LOG_FILE_NAME, "a");
@@ -173,6 +196,13 @@ void loop() {
   */
 
   // Wait before running the loop again
+  
+//}
+  gForce = calculategforce(accelX, accelY, accelZ);
+  
+  Serial.println("UMMM");
+  Serial.println(gForce);
+
   delay(SAMPLE_RATE);
-}
+
 }
