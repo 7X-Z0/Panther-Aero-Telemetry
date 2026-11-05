@@ -33,7 +33,7 @@ float calculategforce(float accelX, float accelY, float accelZ){
 }
 
 //Calibrate Roll Pitch Yaw
-void calibrate() {
+/* void calibrate() {
   //Wait until BNO08x reports good calibration status
   sh2_SensorValue_t val;
   const uint32_t startMs = millis();
@@ -77,6 +77,7 @@ void calibrate() {
     Serial.println(F("[CAL] ERROR: No valid BMP388 readings during calibration!"));
   }
 }
+  */
 
 // ─────────────────────────────────────────────
 //  Quaternion to Euler (degrees)
@@ -124,7 +125,7 @@ void setup() {
   }
 
   Serial.println("Before");
-  calibrate();
+  //calibrate();
   Serial.println("After");
 
   // Barometer configuration
