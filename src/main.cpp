@@ -178,7 +178,6 @@ void loop() {
   } else {
     altitude = barometer.readAltitude(1013.25);
     temperature = barometer.readTemperature();
-    Serial.println("FUCK YOU");
     Serial.print("Altitude: ");
     Serial.print(altitude);
     Serial.println(" m");
