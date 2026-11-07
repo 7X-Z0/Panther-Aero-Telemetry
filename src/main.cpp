@@ -17,6 +17,7 @@ float pitch  = 0, roll   = 0, yaw    = 0;
 float altitudeBaseline = 0.0; 
 float gravityConstant = 9.81;
 float gForce = 0;
+float totalGroundSpeed = 0.0, xGroundSpeed = 0.0, yGroundSpeed = 0.0, zGroundSpeed = 0.0;
 
 //Barometer address: 0x76
 //IMU address: 0x4A
@@ -30,6 +31,14 @@ float calculategforce(float accelX, float accelY, float accelZ){
   float magnitudeAccel = sqrt(pow(accelX, 2) + pow(accelY, 2) + pow(accelZ, 2));
   float Gforce = magnitudeAccel / gravityConstant;
   return Gforce;
+}
+
+//Set report type
+void setReportType(sh2_SensorId_t reportType, uint32_t interval_us) {
+  if (!IMU.enableReport(reportType, interval_us)) {
+    Serial.print(F("[ERR] Failed to enable report for sensor "));
+    Serial.println(reportType);
+  }
 }
 
 //Calibrate Roll Pitch Yaw
@@ -79,6 +88,19 @@ float calculategforce(float accelX, float accelY, float accelZ){
 }
   */
 
+//ground speed
+float calculateGroundSpeed(float accelX, float accelY, float accelZ) {
+  float initialXGroundSpeed = xGroundSpeed;
+  float initialYGroundSpeed = yGroundSpeed;
+  float initialZGroundSpeed = zGroundSpeed;
+  float xGroundSpeed = initialXGroundSpeed + accelX * 0.1;
+  float yGroundSpeed = initialYGroundSpeed + accelY * 0.1;
+  float zGroundSpeed = initialZGroundSpeed + accelZ * 0.1;
+  float totalGroundSpeed = sqrt(pow(xGroundSpeed, 2) + pow(yGroundSpeed, 2) + pow(zGroundSpeed, 2));
+  return totalGroundSpeed;
+}
+
+
 // ─────────────────────────────────────────────
 //  Quaternion to Euler (degrees)
 //  Convention: ZYX (aerospace): Yaw/Pitch/Roll
@@ -112,6 +134,7 @@ void setup() {
   Serial.begin(115200); // Initialize ESP32
   Wire.begin(21, 22);  // SDA, SCL on ESP32 DevKit V1
 
+  //initialize sensors
   if (!barometer.begin_I2C(0x76, &Wire)) {
     Serial.println(F("[ERR] BMP388 not found on I2C bus."));
   } else {
@@ -124,6 +147,7 @@ void setup() {
     Serial.println(F("[OK] BNO08x initialized."));
   }
 
+  //Calibration (broken)
   Serial.println("Before");
   //calibrate();
   Serial.println("After");
@@ -135,8 +159,9 @@ void setup() {
   barometer.setOutputDataRate(BMP3_ODR_50_HZ);
 
   // IMU configuration
-  IMU.enableReport(SH2_ACCELEROMETER);
-  IMU.enableReport(SH2_GYROSCOPE_CALIBRATED);
+  setReportType(SH2_ARVR_STABILIZED_RV, 10000); // 100 Hz
+  setReportType(SH2_ACCELEROMETER, 10000); // 100 Hz
+
 
   // Log file creation
   /*
@@ -162,20 +187,35 @@ void loop() {
     Serial.println(" C");
   }
 
-//  while (IMU.getSensorEvent(&sensorValue)){
-//    if (sensorValue.sensorId == SH2_ROTATION_VECTOR){
-//      quaternionToEuler(
-//        sensorValue.un.rotationVector.real,
-//        sensorValue.un.rotationVector.i,
-//        sensorValue.un.rotationVector.j,
-//        sensorValue.un.rotationVector.k,
-//        roll, pitch, yaw
-//      );
-//    } else if (sensorValue.sensorId == SH2_LINEAR_ACCELERATION) {
-//      accelX = sensorValue.un.linearAcceleration.x;
-//      accelY = sensorValue.un.linearAcceleration.y;
-//      accelZ = sensorValue.un.linearAcceleration.z;
-//    }
+  //Check if IMU was reset
+  if (IMU.wasReset()) {
+    setReportType(SH2_ARVR_STABILIZED_RV, 10000);
+  }
+
+  while (IMU.getSensorEvent(&sensorValue)){
+    if (sensorValue.sensorId == SH2_ARVR_STABILIZED_RV){
+      quaternionToEuler(
+        sensorValue.un.rotationVector.real,
+        sensorValue.un.rotationVector.i,
+        sensorValue.un.rotationVector.j,
+        sensorValue.un.rotationVector.k,
+        roll, pitch, yaw
+      );
+        Serial.print("Roll: ");
+        Serial.print(roll);
+
+        Serial.print(" | Pitch: ");
+        Serial.print(pitch);
+
+        Serial.print(" | Yaw: ");
+        Serial.println(yaw);
+    } else if (sensorValue.sensorId == SH2_ACCELEROMETER) {
+      accelX = sensorValue.un.accelerometer.x;
+      accelY = sensorValue.un.accelerometer.y;
+      accelZ = sensorValue.un.accelerometer.z;
+    }
+  }
+    
   /*
   // Write the data into the flight log
   File logFile = SD.open(LOG_FILE_NAME, "a");
@@ -200,9 +240,11 @@ void loop() {
   
 //}
   gForce = calculategforce(accelX, accelY, accelZ);
-  
+  totalGroundSpeed = calculateGroundSpeed(accelX, accelY, accelZ);
+
   Serial.println("UMMM");
   Serial.println(gForce);
+  Serial.println(totalGroundSpeed);
 
   delay(SAMPLE_RATE);
 
