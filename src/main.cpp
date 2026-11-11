@@ -93,10 +93,10 @@ float calculateGroundSpeed(float accelX, float accelY, float accelZ) {
   float initialXGroundSpeed = xGroundSpeed;
   float initialYGroundSpeed = yGroundSpeed;
   float initialZGroundSpeed = zGroundSpeed;
-  float xGroundSpeed = initialXGroundSpeed + accelX * 0.1;
-  float yGroundSpeed = initialYGroundSpeed + accelY * 0.1;
-  float zGroundSpeed = initialZGroundSpeed + accelZ * 0.1;
-  float totalGroundSpeed = sqrt(pow(xGroundSpeed, 2) + pow(yGroundSpeed, 2) + pow(zGroundSpeed, 2));
+  xGroundSpeed = initialXGroundSpeed + accelX * 0.1;
+  yGroundSpeed = initialYGroundSpeed + accelY * 0.1;
+  zGroundSpeed = initialZGroundSpeed + accelZ * 0.1;
+  totalGroundSpeed = sqrt(pow(xGroundSpeed, 2) + pow(yGroundSpeed, 2) + pow(zGroundSpeed, 2));
   return totalGroundSpeed;
 }
 
@@ -157,6 +157,7 @@ void setup() {
   barometer.setPressureOversampling(BMP3_OVERSAMPLING_4X);
   barometer.setIIRFilterCoeff(BMP3_IIR_FILTER_COEFF_7);
   barometer.setOutputDataRate(BMP3_ODR_50_HZ);
+  altitudeBaseline = barometer.readAltitude(1013.25);
 
   // IMU configuration
   setReportType(SH2_ARVR_STABILIZED_RV, 10000); // 100 Hz
@@ -176,7 +177,7 @@ void loop() {
   if (!barometer.performReading()) {
     Serial.println(F("[ERR] Failed to perform reading from BMP388."));
   } else {
-    altitude = barometer.readAltitude(1013.25);
+    altitude = barometer.readAltitude(1013.25) - altitudeBaseline;
     temperature = barometer.readTemperature();
     Serial.print("Altitude: ");
     Serial.print(altitude);
@@ -194,10 +195,10 @@ void loop() {
   while (IMU.getSensorEvent(&sensorValue)){
     if (sensorValue.sensorId == SH2_ARVR_STABILIZED_RV){
       quaternionToEuler(
-        sensorValue.un.rotationVector.real,
-        sensorValue.un.rotationVector.i,
-        sensorValue.un.rotationVector.j,
-        sensorValue.un.rotationVector.k,
+        sensorValue.un.arvrStabilizedRV.real,
+        sensorValue.un.arvrStabilizedRV.i,
+        sensorValue.un.arvrStabilizedRV.j,
+        sensorValue.un.arvrStabilizedRV.k,
         roll, pitch, yaw
       );
         Serial.print("Roll: ");
@@ -242,6 +243,9 @@ void loop() {
   totalGroundSpeed = calculateGroundSpeed(accelX, accelY, accelZ);
 
   Serial.println("UMMM");
+  Serial.println(accelX);
+  Serial.println(accelY);
+  Serial.println(accelZ);
   Serial.println(gForce);
   Serial.println(totalGroundSpeed);
 
