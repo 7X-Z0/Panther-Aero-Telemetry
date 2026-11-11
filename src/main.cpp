@@ -5,6 +5,7 @@
 #include <Adafruit_Sensor.h>  // Main sensor library
 #include <Adafruit_BMP3XX.h>  // Driver for Barometer
 #include <Adafruit_BNO08x.h> //Driver for IMU
+#include <math.h>
 
 const char* LOG_FILE_NAME = "/flight-log.txt";
 const int SAMPLE_RATE = 100;  // How often data is logged (in milliseconds)
@@ -14,25 +15,49 @@ float altitude = 0, temperature = 0;
 float accelX = 0, accelY = 0, accelZ = 0;
 float pitch  = 0, roll   = 0, yaw    = 0;
 float altitudeBaseline = 0.0; 
+float gravityConstant = 9.81;
+float gForce = 0;
+float totalGroundSpeed = 0.0, xGroundSpeed = 0.0, yGroundSpeed = 0.0, zGroundSpeed = 0.0;
+
+//Barometer address: 0x76
+//IMU address: 0x4A
 
 Adafruit_BMP3XX barometer;
 Adafruit_BNO08x IMU;
 sh2_SensorValue_t sensorValue;
 
 //Calculate gforce
-void calculategforce(){
-  
+float calculategforce(float accelX, float accelY, float accelZ){
+  float magnitudeAccel = sqrt(pow(accelX, 2) + pow(accelY, 2) + pow(accelZ, 2));
+  float Gforce = magnitudeAccel / gravityConstant;
+  return Gforce;
+}
+
+//Set report type
+void setReportType(sh2_SensorId_t reportType, uint32_t interval_us) {
+  if (!IMU.enableReport(reportType, interval_us)) {
+    Serial.print(F("[ERR] Failed to enable report for sensor "));
+    Serial.println(reportType);
+  }
 }
 
 //Calibrate Roll Pitch Yaw
-void calibrate() {
+/* void calibrate() {
   //Wait until BNO08x reports good calibration status
   sh2_SensorValue_t val;
-  while (true) {
+  const uint32_t startMs = millis();
+  const uint32_t timeoutMs = 15000;  // 15s guard to avoid hanging forever
+
+  while (millis() - startMs < timeoutMs) {
     if (IMU.getSensorEvent(&val)) {
       if (val.status >= 2) break;  // 0=unreliable, 1=low, 2=medium, 3=high
     }
     delay(10);
+  }
+
+  if (millis() - startMs >= timeoutMs) {
+    Serial.println(F("[CAL] WARNING: IMU calibration timeout; continuing without final calibration."));
+    return;
   }
 
   Serial.println(F("[CAL] IMU ready, sampling altitude baseline..."));
@@ -61,6 +86,20 @@ void calibrate() {
     Serial.println(F("[CAL] ERROR: No valid BMP388 readings during calibration!"));
   }
 }
+  */
+
+//ground speed
+float calculateGroundSpeed(float accelX, float accelY, float accelZ) {
+  float initialXGroundSpeed = xGroundSpeed;
+  float initialYGroundSpeed = yGroundSpeed;
+  float initialZGroundSpeed = zGroundSpeed;
+  float xGroundSpeed = initialXGroundSpeed + accelX * 0.1;
+  float yGroundSpeed = initialYGroundSpeed + accelY * 0.1;
+  float zGroundSpeed = initialZGroundSpeed + accelZ * 0.1;
+  float totalGroundSpeed = sqrt(pow(xGroundSpeed, 2) + pow(yGroundSpeed, 2) + pow(zGroundSpeed, 2));
+  return totalGroundSpeed;
+}
+
 
 // ─────────────────────────────────────────────
 //  Quaternion to Euler (degrees)
@@ -93,33 +132,67 @@ void quaternionToEuler(float qr, float qi, float qj, float qk,
 
 void setup() {
   Serial.begin(115200); // Initialize ESP32
-  Wire.begin();         // Initialize I2C
-  SD.begin();
-  barometer.begin_I2C();
-  IMU.begin_I2C();
+  Wire.begin(21, 22);  // SDA, SCL on ESP32 DevKit V1
+
+  //initialize sensors
+  if (!barometer.begin_I2C(0x76, &Wire)) {
+    Serial.println(F("[ERR] BMP388 not found on I2C bus."));
+  } else {
+    Serial.println(F("[OK] BMP388 initialized."));
+  }
+
+  if (!IMU.begin_I2C(0x4A, &Wire)) {
+    Serial.println(F("[ERR] BNO08x not found on I2C bus."));
+  } else {
+    Serial.println(F("[OK] BNO08x initialized."));
+  }
+
+  //Calibration (broken)
+  Serial.println("Before");
+  //calibrate();
+  Serial.println("After");
 
   // Barometer configuration
-  barometer.setTemperatureOversampling(BMP3_OVERSAMPLING_2X);
+  barometer.setTemperatureOversampling(BMP3_OVERSAMPLING_8X);
+  barometer.setPressureOversampling(BMP3_OVERSAMPLING_4X);
   barometer.setIIRFilterCoeff(BMP3_IIR_FILTER_COEFF_7);
   barometer.setOutputDataRate(BMP3_ODR_50_HZ);
 
   // IMU configuration
-  IMU.enableReport(SH2_ACCELEROMETER);
-  IMU.enableReport(SH2_GYROSCOPE_CALIBRATED);
+  setReportType(SH2_ARVR_STABILIZED_RV, 10000); // 100 Hz
+  setReportType(SH2_ACCELEROMETER, 10000); // 100 Hz
+
 
   // Log file creation
+  /*
   File logFile = SD.open(LOG_FILE_NAME, "w");
   logFile.println("Time | Altitude | Temperature | X-Acceleration | Y-Acceleration | Z-Acceleration | Pitch | Roll | Yaw");
   logFile.close();
+  */
 }
 
 void loop() {
   // Get the barometer's data readings
-  altitude = barometer.readAltitude(1013.25); // Standard sea level pressure in hPa
-  temperature = barometer.temperature;
+  if (!barometer.performReading()) {
+    Serial.println(F("[ERR] Failed to perform reading from BMP388."));
+  } else {
+    altitude = barometer.readAltitude(1013.25);
+    temperature = barometer.readTemperature();
+    Serial.print("Altitude: ");
+    Serial.print(altitude);
+    Serial.println(" m");
+    Serial.print("Temperature: ");
+    Serial.print(temperature);
+    Serial.println(" C");
+  }
+
+  //Check if IMU was reset
+  if (IMU.wasReset()) {
+    setReportType(SH2_ARVR_STABILIZED_RV, 10000);
+  }
 
   while (IMU.getSensorEvent(&sensorValue)){
-    if (sensorValue.sensorId == SH2_ROTATION_VECTOR){
+    if (sensorValue.sensorId == SH2_ARVR_STABILIZED_RV){
       quaternionToEuler(
         sensorValue.un.rotationVector.real,
         sensorValue.un.rotationVector.i,
@@ -127,12 +200,22 @@ void loop() {
         sensorValue.un.rotationVector.k,
         roll, pitch, yaw
       );
-    } else if (sensorValue.sensorId == SH2_LINEAR_ACCELERATION) {
-      accelX = sensorValue.un.linearAcceleration.x;
-      accelY = sensorValue.un.linearAcceleration.y;
-      accelZ = sensorValue.un.linearAcceleration.z;
-    }
+        Serial.print("Roll: ");
+        Serial.print(roll);
 
+        Serial.print(" | Pitch: ");
+        Serial.print(pitch);
+
+        Serial.print(" | Yaw: ");
+        Serial.println(yaw);
+    } else if (sensorValue.sensorId == SH2_ACCELEROMETER) {
+      accelX = sensorValue.un.accelerometer.x;
+      accelY = sensorValue.un.accelerometer.y;
+      accelZ = sensorValue.un.accelerometer.z;
+    }
+  }
+    
+  /*
   // Write the data into the flight log
   File logFile = SD.open(LOG_FILE_NAME, "a");
   
@@ -150,7 +233,18 @@ void loop() {
   );
 
   logFile.close();
+  */
 
   // Wait before running the loop again
+  
+//}
+  gForce = calculategforce(accelX, accelY, accelZ);
+  totalGroundSpeed = calculateGroundSpeed(accelX, accelY, accelZ);
+
+  Serial.println("UMMM");
+  Serial.println(gForce);
+  Serial.println(totalGroundSpeed);
+
   delay(SAMPLE_RATE);
+
 }
