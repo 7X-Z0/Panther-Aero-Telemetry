@@ -41,8 +41,8 @@ void setReportType(sh2_SensorId_t reportType, uint32_t interval_us) {
   }
 }
 
-//Calibrate Roll Pitch Yaw
-/* void calibrate() {
+//Calibrate Roll Pitch Yaw (BROKEN)
+ void calibrate() {
   //Wait until BNO08x reports good calibration status
   sh2_SensorValue_t val;
   const uint32_t startMs = millis();
@@ -86,7 +86,6 @@ void setReportType(sh2_SensorId_t reportType, uint32_t interval_us) {
     Serial.println(F("[CAL] ERROR: No valid BMP388 readings during calibration!"));
   }
 }
-  */
 
 //ground speed
 float calculateGroundSpeed(float accelX, float accelY, float accelZ) {
@@ -149,7 +148,7 @@ void setup() {
 
   //Calibration (broken)
   Serial.println("Before");
-  //calibrate();
+  calibrate();
   Serial.println("After");
 
   // Barometer configuration
