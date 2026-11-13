@@ -6,33 +6,43 @@
 #include <Adafruit_BMP3XX.h>  // Driver for Barometer
 #include <Adafruit_BNO08x.h>  // Driver for IMU
 #include <TinyGPSPlus.h>      // Driver for GPS
+#include <MS4525DO.h>
 #include <math.h>
 
 const char* LOG_FILE_NAME = "/flight-log.txt";
 const int SAMPLE_RATE = 100;  // How often data is logged (in milliseconds)
 
 // Global sensor values (read in loop, served on request)
-float altitude = 0, temperature = 0;
+float altitude = 0.0, temperature = 0.0;
 float accelX = 0, accelY = 0, accelZ = 0;
 float pitch  = 0, roll   = 0, yaw    = 0;
 float altitudeBaseline = 0.0; 
 float gravityConstant = 9.81;
 float gForce = 0;
-float totalGroundSpeed = 0.0, xGroundSpeed = 0.0, yGroundSpeed = 0.0, zGroundSpeed = 0.0;
+//float totalGroundSpeed = 0.0, xGroundSpeed = 0.0, yGroundSpeed = 0.0, zGroundSpeed = 0.0;
 bool isCalibrated = false;
 bool GPSFix = false;
 float pressureBaseline = 0.0;
 float groundSpeed = 0.0;
+float airSpeed = 0.0;
+float airDensity = 0.0;
+float airPressure = 0.0;
+float signed_PA = 0.0;
 
+
+//Pitot Tube address: 0x28
 //Barometer address: 0x76
 //IMU address: 0x4A
 #define SD_CS 5
 
+MS4525DO sensor(0x28); //Airspeed Sensor MS4525D B
 Adafruit_BMP3XX barometer;
 Adafruit_BNO08x IMU;
 sh2_SensorValue_t sensorValue;
 TinyGPSPlus gps;
 HardwareSerial gpsSerial(2); // Use UART1 for GPS
+
+
 
 void readGPS() {
     while (gpsSerial.available() > 0) {
@@ -87,6 +97,11 @@ float calculateGroundSpeed() {
     return NAN;
 }
 
+//air speed
+float calculateAirSpeed() 
+{
+  airSpeed = sqrtf((2.0f * signed_PA) / airDensity);
+}
 
 // ─────────────────────────────────────────────
 //  Quaternion to Euler (degrees)
@@ -134,6 +149,12 @@ void setup() {
     Serial.println(F("[OK] BNO08x initialized."));
   }
 
+  if(!sensor.begin(2, 'A')){
+    Serial.println(F("[ERR] MS452D B not found on I2C bus."));
+  } else {
+    Serial.println(F("[OK] MS452D B initialized."));
+  }
+
   // Barometer configuration
   barometer.setTemperatureOversampling(BMP3_OVERSAMPLING_8X);
   barometer.setPressureOversampling(BMP3_OVERSAMPLING_4X);
@@ -170,6 +191,19 @@ void setup() {
 void loop() {
   bool receivedAccel = false;
   readGPS();
+  
+  //Airpressure readings
+  int state = sensor.read();
+  if (state == MS4525DO_OK)
+  {
+    float signed_PSI = sensor.getPSI() - 1.0f;
+    signed_PA = signed_PSI * 6894.76f;
+  }
+  else
+  {
+    Serial.print("[ERR]: ");
+    Serial.println(state);
+  }
 
   // Get the barometer's data readings
   if (!barometer.performReading()) {
@@ -177,6 +211,8 @@ void loop() {
   } else {
     altitude = 44330.0f * (1.0f - powf(barometer.pressure / pressureBaseline, 0.19029495f));
     temperature = barometer.readTemperature();
+    float temperatureK = temperature + 273.15f;
+    airDensity = barometer.pressure / (287.05f * temperatureK);
   }
 
   //Check if IMU was reset
@@ -206,7 +242,7 @@ void loop() {
   File logFile = SD.open(LOG_FILE_NAME, "a");
   
   logFile.printf(
-    "%lu | %.2f | %.2f | %.2f | %.2f | %.2f | %.2f | %.2f\n",
+    "%lu | %.2f | %.2f | %.2f | %.2f | %.2f | %.2f | %.2f | %.2f\n",
     millis(),
     altitude,
     temperature,
@@ -214,7 +250,8 @@ void loop() {
     accelY,
     accelZ,
     gForce,
-    groundSpeed
+    groundSpeed,
+    airSpeed
   );
 
   logFile.close();
@@ -231,6 +268,8 @@ void loop() {
   Serial.print("Temperature: ");
   Serial.print(temperature);
   Serial.println(" C");
+  Serial.print("Air Speed: ");
+  Serial.println(airSpeed);
 
   delay(SAMPLE_RATE);
 
