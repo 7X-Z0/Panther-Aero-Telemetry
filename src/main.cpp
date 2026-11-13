@@ -4,7 +4,8 @@
 #include <SD.h>               // Gives read/write capabilites for SD card
 #include <Adafruit_Sensor.h>  // Main sensor library
 #include <Adafruit_BMP3XX.h>  // Driver for Barometer
-#include <Adafruit_BNO08x.h> //Driver for IMU
+#include <Adafruit_BNO08x.h>  // Driver for IMU
+#include <TinyGPSPlus.h>      // Driver for GPS
 #include <math.h>
 
 const char* LOG_FILE_NAME = "/flight-log.txt";
@@ -18,19 +19,26 @@ float altitudeBaseline = 0.0;
 float gravityConstant = 9.81;
 float gForce = 0;
 float totalGroundSpeed = 0.0, xGroundSpeed = 0.0, yGroundSpeed = 0.0, zGroundSpeed = 0.0;
+bool isCalibrated = false;
+bool GPSFix = false;
+float pressureBaseline = 0.0;
+float groundSpeed = 0.0;
 
 //Barometer address: 0x76
 //IMU address: 0x4A
+#define SD_CS 5
 
 Adafruit_BMP3XX barometer;
 Adafruit_BNO08x IMU;
 sh2_SensorValue_t sensorValue;
+TinyGPSPlus gps;
+HardwareSerial gpsSerial(2); // Use UART1 for GPS
 
-//Calculate gforce
-float calculategforce(float accelX, float accelY, float accelZ){
-  float magnitudeAccel = sqrt(pow(accelX, 2) + pow(accelY, 2) + pow(accelZ, 2));
-  float Gforce = magnitudeAccel / gravityConstant;
-  return Gforce;
+void readGPS() {
+    while (gpsSerial.available() > 0) {
+        char incoming = gpsSerial.read();
+        gps.encode(incoming);
+    }
 }
 
 //Set report type
@@ -41,63 +49,42 @@ void setReportType(sh2_SensorId_t reportType, uint32_t interval_us) {
   }
 }
 
-//Calibrate Roll Pitch Yaw
-/* void calibrate() {
-  //Wait until BNO08x reports good calibration status
-  sh2_SensorValue_t val;
-  const uint32_t startMs = millis();
-  const uint32_t timeoutMs = 15000;  // 15s guard to avoid hanging forever
-
-  while (millis() - startMs < timeoutMs) {
-    if (IMU.getSensorEvent(&val)) {
-      if (val.status >= 2) break;  // 0=unreliable, 1=low, 2=medium, 3=high
-    }
-    delay(10);
-  }
-
-  if (millis() - startMs >= timeoutMs) {
-    Serial.println(F("[CAL] WARNING: IMU calibration timeout; continuing without final calibration."));
-    return;
-  }
-
-  Serial.println(F("[CAL] IMU ready, sampling altitude baseline..."));
-
-  //Barometer sampling before calibration
-  for (int i = 0; i < 5; i++) {
-    barometer.performReading();
-    delay(50);
-  }
-
-  float sum = 0;
-  int   good = 0;
-  for (int i = 0; i < 20; i++) {
+//Calibrate
+ void calibrate() {
+  Serial.println("[CAL] Calibrating Altitude...");
+  float pressureSum = 0;
+  int readings = 0;
+  for (int i=0; i < 50; i++){
     if (barometer.performReading()) {
-      sum += barometer.readAltitude(1013.25);
-      good++;
+      pressureSum += barometer.readPressure();
+      readings++;
     }
-    delay(50);
   }
-  if (good > 0) {
-    altitudeBaseline = sum / good;
-    Serial.print(F("[CAL] Baseline set to "));
-    Serial.print(altitudeBaseline, 2);
-    Serial.println(F(" m"));
+  if (readings > 0) {
+    pressureBaseline = pressureSum / readings;
+    Serial.print("[CAL] Altitude baseline set to: ");
+    Serial.println(altitudeBaseline);
+    isCalibrated = true;
   } else {
-    Serial.println(F("[CAL] ERROR: No valid BMP388 readings during calibration!"));
+    Serial.println("[ERR] Failed to read pressure for calibration.");
   }
 }
-  */
+
+//Calculate gforce
+float calculategforce(float accelX, float accelY, float accelZ){
+  float magnitudeAccel = sqrt(pow(accelX, 2) + pow(accelY, 2) + pow(accelZ, 2));
+  float Gforce = magnitudeAccel / gravityConstant;
+  return Gforce;
+}
 
 //ground speed
-float calculateGroundSpeed(float accelX, float accelY, float accelZ) {
-  float initialXGroundSpeed = xGroundSpeed;
-  float initialYGroundSpeed = yGroundSpeed;
-  float initialZGroundSpeed = zGroundSpeed;
-  float xGroundSpeed = initialXGroundSpeed + accelX * 0.1;
-  float yGroundSpeed = initialYGroundSpeed + accelY * 0.1;
-  float zGroundSpeed = initialZGroundSpeed + accelZ * 0.1;
-  float totalGroundSpeed = sqrt(pow(xGroundSpeed, 2) + pow(yGroundSpeed, 2) + pow(zGroundSpeed, 2));
-  return totalGroundSpeed;
+float calculateGroundSpeed() {
+
+    if (gps.speed.isValid() && gps.speed.age() < 2000) {
+        return gps.speed.mps();
+    }
+
+    return NAN;
 }
 
 
@@ -147,103 +134,103 @@ void setup() {
     Serial.println(F("[OK] BNO08x initialized."));
   }
 
-  //Calibration (broken)
-  Serial.println("Before");
-  //calibrate();
-  Serial.println("After");
-
   // Barometer configuration
   barometer.setTemperatureOversampling(BMP3_OVERSAMPLING_8X);
   barometer.setPressureOversampling(BMP3_OVERSAMPLING_4X);
   barometer.setIIRFilterCoeff(BMP3_IIR_FILTER_COEFF_7);
   barometer.setOutputDataRate(BMP3_ODR_50_HZ);
+  altitudeBaseline = barometer.readAltitude(1013.25);
 
   // IMU configuration
   setReportType(SH2_ARVR_STABILIZED_RV, 10000); // 100 Hz
   setReportType(SH2_ACCELEROMETER, 10000); // 100 Hz
 
+  //Calibration
+  Serial.println("Before");
+  calibrate();
+  Serial.println("After");
+
+  // GPS configuration
+  gpsSerial.begin(9600, SERIAL_8N1, 16, 17);
+  Serial.println("[OK] GPS UART initialized.");
 
   // Log file creation
-  /*
+  SPI.begin(18, 19, 23, SD_CS);
+
+  if (!SD.begin(SD_CS, SPI)) {
+    Serial.println("[ERR] SD card initialization failed!");
+  } else {
+    Serial.println("[OK] SD card initialized.");
+  }
   File logFile = SD.open(LOG_FILE_NAME, "w");
-  logFile.println("Time | Altitude | Temperature | X-Acceleration | Y-Acceleration | Z-Acceleration | Pitch | Roll | Yaw");
+  logFile.println("Time | Altitude | Temperature | X-Acceleration | Y-Acceleration | Z-Acceleration | G-Force | Ground Speed");
   logFile.close();
-  */
 }
 
 void loop() {
+  bool receivedAccel = false;
+  readGPS();
+
   // Get the barometer's data readings
   if (!barometer.performReading()) {
     Serial.println(F("[ERR] Failed to perform reading from BMP388."));
   } else {
-    altitude = barometer.readAltitude(1013.25);
+    altitude = 44330.0f * (1.0f - powf(barometer.pressure / pressureBaseline, 0.19029495f));
     temperature = barometer.readTemperature();
-    Serial.print("Altitude: ");
-    Serial.print(altitude);
-    Serial.println(" m");
-    Serial.print("Temperature: ");
-    Serial.print(temperature);
-    Serial.println(" C");
   }
 
   //Check if IMU was reset
   if (IMU.wasReset()) {
     setReportType(SH2_ARVR_STABILIZED_RV, 10000);
+    setReportType(SH2_ACCELEROMETER, 10000);
   }
-
+  
   while (IMU.getSensorEvent(&sensorValue)){
-    if (sensorValue.sensorId == SH2_ARVR_STABILIZED_RV){
-      quaternionToEuler(
-        sensorValue.un.rotationVector.real,
-        sensorValue.un.rotationVector.i,
-        sensorValue.un.rotationVector.j,
-        sensorValue.un.rotationVector.k,
-        roll, pitch, yaw
-      );
-        Serial.print("Roll: ");
-        Serial.print(roll);
-
-        Serial.print(" | Pitch: ");
-        Serial.print(pitch);
-
-        Serial.print(" | Yaw: ");
-        Serial.println(yaw);
-    } else if (sensorValue.sensorId == SH2_ACCELEROMETER) {
+    if (sensorValue.sensorId == SH2_ACCELEROMETER) {
       accelX = sensorValue.un.accelerometer.x;
       accelY = sensorValue.un.accelerometer.y;
       accelZ = sensorValue.un.accelerometer.z;
+                  receivedAccel = true;
     }
   }
-    
-  /*
+
+
+  Serial.print("Accelerometer event received: ");
+  Serial.println(receivedAccel ? "YES" : "NO");
+  
+  gForce = calculategforce(accelX, accelY, accelZ);
+  groundSpeed = calculateGroundSpeed();
+  GPSFix = gps.location.isValid() && gps.location.age() < 2000;
+
   // Write the data into the flight log
   File logFile = SD.open(LOG_FILE_NAME, "a");
   
   logFile.printf(
-    "%lu | %.2f | %.2f | %.2f | %.2f | %.2f | %.2f\n",
+    "%lu | %.2f | %.2f | %.2f | %.2f | %.2f | %.2f | %.2f\n",
     millis(),
     altitude,
     temperature,
     accelX,
     accelY,
     accelZ,
-    roll,
-    pitch,
-    yaw
+    gForce,
+    groundSpeed
   );
 
   logFile.close();
-  */
-
-  // Wait before running the loop again
-  
-//}
-  gForce = calculategforce(accelX, accelY, accelZ);
-  totalGroundSpeed = calculateGroundSpeed(accelX, accelY, accelZ);
 
   Serial.println("UMMM");
+  Serial.println(accelX);
+  Serial.println(accelY);
+  Serial.println(accelZ);
   Serial.println(gForce);
-  Serial.println(totalGroundSpeed);
+  Serial.println(groundSpeed);
+  Serial.print("Altitude: ");
+  Serial.print(altitude);
+  Serial.println(" m");
+  Serial.print("Temperature: ");
+  Serial.print(temperature);
+  Serial.println(" C");
 
   delay(SAMPLE_RATE);
 
