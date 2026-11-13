@@ -101,6 +101,7 @@ float calculateGroundSpeed() {
 float calculateAirSpeed() 
 {
   sqrtf((2.0f * signed_PA) / airDensity);
+  return airSpeed;
 }
 
 // ─────────────────────────────────────────────
@@ -184,7 +185,7 @@ void setup() {
     Serial.println("[OK] SD card initialized.");
   }
   File logFile = SD.open(LOG_FILE_NAME, "w");
-  logFile.println("Time | Altitude | Temperature | X-Acceleration | Y-Acceleration | Z-Acceleration | G-Force | Ground Speed");
+  logFile.println("Time | Altitude | Temperature | X-Acceleration | Y-Acceleration | Z-Acceleration | G-Force | Ground Speed | Air Speed");
   logFile.close();
 }
 
