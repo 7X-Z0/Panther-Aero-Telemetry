@@ -100,7 +100,7 @@ float calculateGroundSpeed() {
 //air speed
 float calculateAirSpeed() 
 {
-  airSpeed = sqrtf((2.0f * signed_PA) / airDensity);
+  sqrtf((2.0f * signed_PA) / airDensity);
 }
 
 // ─────────────────────────────────────────────
@@ -236,6 +236,7 @@ void loop() {
   
   gForce = calculategforce(accelX, accelY, accelZ);
   groundSpeed = calculateGroundSpeed();
+  airSpeed = calculateAirSpeed();
   GPSFix = gps.location.isValid() && gps.location.age() < 2000;
 
   // Write the data into the flight log
