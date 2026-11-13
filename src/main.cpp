@@ -4,7 +4,8 @@
 #include <SD.h>               // Gives read/write capabilites for SD card
 #include <Adafruit_Sensor.h>  // Main sensor library
 #include <Adafruit_BMP3XX.h>  // Driver for Barometer
-#include <Adafruit_BNO08x.h> //Driver for IMU
+#include <Adafruit_BNO08x.h>  // Driver for IMU
+#include <TinyGPSPlus.h>      // Driver for GPS
 #include <math.h>
 
 const char* LOG_FILE_NAME = "/flight-log.txt";
@@ -19,7 +20,9 @@ float gravityConstant = 9.81;
 float gForce = 0;
 float totalGroundSpeed = 0.0, xGroundSpeed = 0.0, yGroundSpeed = 0.0, zGroundSpeed = 0.0;
 bool isCalibrated = false;
+bool GPSFix = false;
 float pressureBaseline = 0.0;
+float groundSpeed = 0.0;
 
 //Barometer address: 0x76
 //IMU address: 0x4A
@@ -28,12 +31,14 @@ float pressureBaseline = 0.0;
 Adafruit_BMP3XX barometer;
 Adafruit_BNO08x IMU;
 sh2_SensorValue_t sensorValue;
+TinyGPSPlus gps;
+HardwareSerial gpsSerial(2); // Use UART1 for GPS
 
-//Calculate gforce
-float calculategforce(float accelX, float accelY, float accelZ){
-  float magnitudeAccel = sqrt(pow(accelX, 2) + pow(accelY, 2) + pow(accelZ, 2));
-  float Gforce = magnitudeAccel / gravityConstant;
-  return Gforce;
+void readGPS() {
+    while (gpsSerial.available() > 0) {
+        char incoming = gpsSerial.read();
+        gps.encode(incoming);
+    }
 }
 
 //Set report type
@@ -65,16 +70,21 @@ void setReportType(sh2_SensorId_t reportType, uint32_t interval_us) {
   }
 }
 
+//Calculate gforce
+float calculategforce(float accelX, float accelY, float accelZ){
+  float magnitudeAccel = sqrt(pow(accelX, 2) + pow(accelY, 2) + pow(accelZ, 2));
+  float Gforce = magnitudeAccel / gravityConstant;
+  return Gforce;
+}
+
 //ground speed
-float calculateGroundSpeed(float accelX, float accelY, float accelZ) {
-  float initialXGroundSpeed = xGroundSpeed;
-  float initialYGroundSpeed = yGroundSpeed;
-  float initialZGroundSpeed = zGroundSpeed;
-  xGroundSpeed = initialXGroundSpeed + accelX * 0.1;
-  yGroundSpeed = initialYGroundSpeed + accelY * 0.1;
-  zGroundSpeed = initialZGroundSpeed + accelZ * 0.1;
-  totalGroundSpeed = sqrt(pow(xGroundSpeed, 2) + pow(yGroundSpeed, 2) + pow(zGroundSpeed, 2));
-  return totalGroundSpeed;
+float calculateGroundSpeed() {
+
+    if (gps.speed.isValid() && gps.speed.age() < 2000) {
+        return gps.speed.mps();
+    }
+
+    return NAN;
 }
 
 
@@ -135,10 +145,14 @@ void setup() {
   setReportType(SH2_ARVR_STABILIZED_RV, 10000); // 100 Hz
   setReportType(SH2_ACCELEROMETER, 10000); // 100 Hz
 
-  //Calibration (broken)
+  //Calibration
   Serial.println("Before");
   calibrate();
   Serial.println("After");
+
+  // GPS configuration
+  gpsSerial.begin(9600, SERIAL_8N1, 16, 17);
+  Serial.println("[OK] GPS UART initialized.");
 
   // Log file creation
   SPI.begin(18, 19, 23, SD_CS);
@@ -154,6 +168,9 @@ void setup() {
 }
 
 void loop() {
+  bool receivedAccel = false;
+  readGPS();
+
   // Get the barometer's data readings
   if (!barometer.performReading()) {
     Serial.println(F("[ERR] Failed to perform reading from BMP388."));
@@ -167,7 +184,7 @@ void loop() {
     setReportType(SH2_ARVR_STABILIZED_RV, 10000);
     setReportType(SH2_ACCELEROMETER, 10000);
   }
-    bool receivedAccel = false;
+  
   while (IMU.getSensorEvent(&sensorValue)){
     if (sensorValue.sensorId == SH2_ACCELEROMETER) {
       accelX = sensorValue.un.accelerometer.x;
@@ -178,11 +195,12 @@ void loop() {
   }
 
 
-    Serial.print("Accelerometer event received: ");
-    Serial.println(receivedAccel ? "YES" : "NO");
+  Serial.print("Accelerometer event received: ");
+  Serial.println(receivedAccel ? "YES" : "NO");
   
   gForce = calculategforce(accelX, accelY, accelZ);
-  totalGroundSpeed = calculateGroundSpeed(accelX, accelY, accelZ);
+  groundSpeed = calculateGroundSpeed();
+  GPSFix = gps.location.isValid() && gps.location.age() < 2000;
 
   // Write the data into the flight log
   File logFile = SD.open(LOG_FILE_NAME, "a");
@@ -196,7 +214,7 @@ void loop() {
     accelY,
     accelZ,
     gForce,
-    totalGroundSpeed
+    groundSpeed
   );
 
   logFile.close();
@@ -206,7 +224,7 @@ void loop() {
   Serial.println(accelY);
   Serial.println(accelZ);
   Serial.println(gForce);
-  Serial.println(totalGroundSpeed);
+  Serial.println(groundSpeed);
   Serial.print("Altitude: ");
   Serial.print(altitude);
   Serial.println(" m");

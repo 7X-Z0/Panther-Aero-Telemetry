@@ -17,9 +17,8 @@ git push -u origin [branch name]
 ```
 
 - [ ] Airspeed (Pitot tube) (pending)  
-- [X] Ground Speed (IMU)  
-- [X] G-forces (Lorenzo)  
-- [ ] Pack voltage/power draw (pending)   
+- [X] Ground Speed ~~(IMU)~~ **GPS**    
+- [X] G-forces (Lorenzo)     
 - [ ] Temperature (motor/ESC) (pending)  
 - [x] Temperature (ambient)  
 - [x] Altitude  
