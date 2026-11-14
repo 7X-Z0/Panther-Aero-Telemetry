@@ -26,7 +26,6 @@ float pressureBaseline = 0.0;
 float groundSpeed = 0.0;
 float airSpeed = 0.0;
 float airDensity = 0.0;
-float airPressure = 0.0;
 float signed_PA = 0.0;
 
 
